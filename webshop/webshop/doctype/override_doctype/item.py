@@ -9,6 +9,7 @@ class DataValidationError(frappe.ValidationError):
 
 class WebshopItem(Item):
 	def on_update(self):
+		super(WebshopItem, self).on_update()
 		invalidate_cache_for_item(self)
 		super(WebshopItem, self).on_update()
 
