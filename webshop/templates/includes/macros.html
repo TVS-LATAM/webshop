@@ -302,7 +302,7 @@
 
 		{% if values | len > 20 %}
 		<!-- show inline filter if values more than 20 -->
-		<input type="text" class="form-control form-control-sm mb-2 filter-lookup-input" placeholder="Search {{ _(item_field.label) + 's' }}"/>
+		<input type="text" class="form-control form-control-sm mb-2 filter-lookup-input" placeholder="_('Search') {{ _(item_field.label) + 's' }}"/>
 		{% endif %}
 
 		{% if values %}
@@ -334,7 +334,7 @@
 		<div class="filter-label mb-3">{{ _(attribute.name) }}</div>
 		{% if attribute.item_attribute_values | len > 20 %}
 		<!-- show inline filter if values more than 20 -->
-		<input type="text" class="form-control form-control-sm mb-2 filter-lookup-input" placeholder="Search {{ _(attribute.name) + 's' }}"/>
+		<input type="text" class="form-control form-control-sm mb-2 filter-lookup-input" placeholder="_('Search') {{ _(attribute.name) + 's' }}"/>
 		{% endif %}
 
 		{% if attribute.item_attribute_values %}
