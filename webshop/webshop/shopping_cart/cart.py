@@ -145,6 +145,10 @@ def request_for_quotation():
 	quotation = _get_cart_quotation()
 	quotation.flags.ignore_permissions = True
 	
+	# Check if shipping address is set
+	if not quotation.shipping_address_name:
+		frappe.throw(_("Please set a shipping address before requesting a quotation."))
+	
 	# Check if the quotation is already linked to a project
 	if quotation.project_name:
 		existing_project = frappe.db.exists("Project", quotation.project_name)
