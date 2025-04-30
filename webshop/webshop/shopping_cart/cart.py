@@ -145,6 +145,13 @@ def request_for_quotation():
 	quotation = _get_cart_quotation()
 	quotation.flags.ignore_permissions = True
 	
+	# Check if the quotation is already linked to a project
+	if quotation.project_name:
+		existing_project = frappe.db.exists("Project", quotation.project_name)
+		if existing_project:
+			# Return the existing project name if it already exists
+			return quotation.project_name
+	
 	# Get customer details from quotation
 	customer_name = frappe.db.get_value("Customer", quotation.party_name, "customer_name")
 	
