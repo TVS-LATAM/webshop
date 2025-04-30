@@ -148,17 +148,21 @@ def request_for_quotation():
 	# Get customer details from quotation
 	customer_name = frappe.db.get_value("Customer", quotation.party_name, "customer_name")
 	
+	# Generate a project name based on the quotation
+	project_name = f"RFQ-{frappe.utils.now_datetime().strftime('%Y%m%d%H%M%S')}"
+	
 	# Create a new project with part_status "New request" using get_doc
 	project = frappe.get_doc({
 		"doctype": "Project",
-		"project_name": f"RFQ-{frappe.utils.now_datetime().strftime('%Y%m%d%H%M%S')}",
+		"project_name": project_name,
 		"status": "Open",
 		"part_status": "New request",
 		"expected_start_date": frappe.utils.today(),
 		"customer": quotation.party_name,
 		"customer_name": customer_name,
 		"priority": "Medium",
-		"is_active": "Yes"
+		"is_active": "Yes",
+		"plate": project_name
 	})
 	
 	# Save the project
@@ -167,18 +171,9 @@ def request_for_quotation():
 	
 	# Link the quotation to the project
 	quotation.project = project.name
+	quotation.save()
 	
-	# Add items from quotation to project custom table if needed
-	# This is optional and depends on your project doctype structure
-	
-	# Save or submit the quotation based on settings
-	if get_shopping_cart_settings().save_quotations_as_draft:
-		quotation.save()
-	else:
-		quotation.submit()
-
-	# Return both project and quotation names for reference
-	return quotation.name
+	return project.name
 
 
 @frappe.whitelist()
@@ -360,6 +355,9 @@ def guess_territory():
 
 
 def decorate_quotation_doc(doc):
+	if not doc:
+		return doc
+		
 	for d in doc.get("items", []):
 		item_code = d.item_code
 		fields = ["web_item_name", "thumbnail", "website_image", "description", "route"]
@@ -371,7 +369,12 @@ def decorate_quotation_doc(doc):
 				filters={"item_code": item_code},
 				fieldname=["variant_of", "item_name", "image"],
 				as_dict=True,
-			)[0]
+			)
+			
+			if not variant_data:
+				continue
+				
+			variant_data = variant_data[0]
 			item_code = variant_data.variant_of
 			fields = fields[1:]
 			d.web_item_name = variant_data.item_name
@@ -380,11 +383,12 @@ def decorate_quotation_doc(doc):
 				d.thumbnail = variant_data.image
 				fields = fields[2:]
 
-		d.update(
-			frappe.db.get_value(
-				"Website Item", {"item_code": item_code}, fields, as_dict=True
-			)
+		website_item_data = frappe.db.get_value(
+			"Website Item", {"item_code": item_code}, fields, as_dict=True
 		)
+		
+		if website_item_data:
+			d.update(website_item_data)
 
 		website_warehouse = frappe.get_cached_value(
 			"Website Item", {"item_code": item_code}, "website_warehouse"
