@@ -155,8 +155,8 @@ def request_for_quotation():
 	project = frappe.get_doc({
 		"doctype": "Project",
 		"project_name": project_name,
-		"status": "Open",
-		"part_status": "New request",
+		"status": "",
+		"parts_status": "New request",
 		"expected_start_date": frappe.utils.today(),
 		"customer": quotation.party_name,
 		"customer_name": customer_name,
@@ -170,7 +170,7 @@ def request_for_quotation():
 	project.insert()
 	
 	# Link the quotation to the project
-	quotation.project = project.name
+	quotation.project_name = project.name
 	quotation.save()
 	
 	return project.name
@@ -424,8 +424,6 @@ def _get_cart_quotation(party=None):
 		qdoc = frappe.get_doc(
 			{
 				"doctype": "Quotation",
-				"naming_series": get_shopping_cart_settings().quotation_series
-				or "QTN-CART-",
 				"quotation_to": party.doctype,
 				"company": company,
 				"order_type": "Shopping Cart",
