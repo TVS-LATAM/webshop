@@ -141,14 +141,43 @@ def place_order():
 
 @frappe.whitelist()
 def request_for_quotation():
+	# First, get the cart quotation
 	quotation = _get_cart_quotation()
 	quotation.flags.ignore_permissions = True
-
+	
+	# Get customer details from quotation
+	customer_name = frappe.db.get_value("Customer", quotation.party_name, "customer_name")
+	
+	# Create a new project with part_status "New request" using get_doc
+	project = frappe.get_doc({
+		"doctype": "Project",
+		"project_name": f"RFQ-{frappe.utils.now_datetime().strftime('%Y%m%d%H%M%S')}",
+		"status": "Open",
+		"part_status": "New request",
+		"expected_start_date": frappe.utils.today(),
+		"customer": quotation.party_name,
+		"customer_name": customer_name,
+		"priority": "Medium",
+		"is_active": "Yes"
+	})
+	
+	# Save the project
+	project.flags.ignore_permissions = True
+	project.insert()
+	
+	# Link the quotation to the project
+	quotation.project = project.name
+	
+	# Add items from quotation to project custom table if needed
+	# This is optional and depends on your project doctype structure
+	
+	# Save or submit the quotation based on settings
 	if get_shopping_cart_settings().save_quotations_as_draft:
 		quotation.save()
 	else:
 		quotation.submit()
 
+	# Return both project and quotation names for reference
 	return quotation.name
 
 

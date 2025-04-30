@@ -186,7 +186,18 @@ $.extend(shopping_cart, {
 						.toggle(true);
 				} else {
 					$(btn).hide();
-					window.location.href = '/quotations/' + encodeURIComponent(r.message);
+					shopping_cart.unfreeze();
+					
+					// Show success message
+					frappe.show_alert({
+						message: __("Your quotation request has been submitted successfully. You will receive the final quotation with prices soon. Thank you for your request!"),
+						indicator: 'green'
+					}, 10);
+					
+					// Redirect to home page after a short delay
+					setTimeout(function() {
+						window.location.href = '/';
+					}, 3000);
 				}
 			}
 		});
