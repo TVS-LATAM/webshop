@@ -266,6 +266,25 @@ def add_new_address(doc):
 	address = frappe.get_doc(doc)
 	address.save(ignore_permissions=True)
 
+	# Update customer's phone_number and contact's phone if provided in the address
+	if address.phone:
+		party = get_party()
+		
+		if party and party.doctype == "Customer":
+			# Update customer's phone_number
+			party.phone_number = address.phone
+			party.flags.ignore_permissions = True
+			party.save()
+			
+			# Update contact's phone
+			contact_name = frappe.db.get_value("Contact", {"email_id": frappe.session.user})
+			
+			if contact_name:
+				contact = frappe.get_doc("Contact", contact_name)
+				contact.phone = address.phone
+				contact.flags.ignore_permissions = True
+				contact.save()
+
 	return address
 
 
@@ -636,13 +655,28 @@ def get_party(user=None):
 		customer.flags.ignore_mandatory = True
 		customer.insert(ignore_permissions=True)
 
-		contact = frappe.new_doc("Contact")
-		contact.update(
-			{"first_name": fullname, "email_ids": [{"email_id": user, "is_primary": 1}]}
+		# Check if a contact with this email already exists
+		existing_contact = frappe.db.get_value(
+			"Contact Email", {"email_id": user}, "parent"
 		)
-		contact.append("links", dict(link_doctype="Customer", link_name=customer.name))
-		contact.flags.ignore_mandatory = True
-		contact.insert(ignore_permissions=True)
+		
+		if existing_contact:
+			# If contact exists, just link it to the customer
+			contact = frappe.get_doc("Contact", existing_contact)
+			# Check if this contact is already linked to our customer
+			if not any(link.link_name == customer.name for link in contact.links):
+				contact.append("links", dict(link_doctype="Customer", link_name=customer.name))
+				contact.flags.ignore_mandatory = True
+				contact.save(ignore_permissions=True)
+		else:
+			# Create new contact only if one doesn't exist
+			contact = frappe.new_doc("Contact")
+			contact.update(
+				{"first_name": fullname, "email_ids": [{"email_id": user, "is_primary": 1}]}
+			)
+			contact.append("links", dict(link_doctype="Customer", link_name=customer.name))
+			contact.flags.ignore_mandatory = True
+			contact.insert(ignore_permissions=True)
 
 		return customer
 	else:
