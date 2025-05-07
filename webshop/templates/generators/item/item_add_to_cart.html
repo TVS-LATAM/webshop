@@ -96,13 +96,13 @@
 			<div class="mb-4 d-flex">
 				<!-- Add to Cart -->
 				{% if product_info.price and (cart_settings.allow_items_not_in_stock or product_info.get("in_stock")) %}
-					<a href="/cart" class="btn btn-light btn-view-in-cart hidden mr-2 font-md"
+					<a href="/cart" class="btn btn-light btn-view-in-cart mr-2 font-md {% if not product_info.qty or product_info.qty <= 0 %}hidden{% endif %}"
 						role="button">
 						{{  _("View in Cart") if cart_settings.enable_checkout else _("View in Quote") }}
 					</a>
 					<button
 						data-item-code="{{item_code}}"
-						class="btn btn-primary btn-add-to-cart mr-2 w-30-40"
+						class="btn btn-primary btn-add-to-cart mr-2 w-30-40 {% if product_info.qty and product_info.qty > 0 %}hidden{% endif %}"
 					>
 						<span class="mr-2">
 							<svg class="icon icon-md">
@@ -124,6 +124,34 @@
 
 <script>
 	frappe.ready(() => {
+		// Check if the product is already in the cart when the page loads
+		const checkProductInCart = () => {
+			const item_code = $('[data-variant-item-code]').data('variant-item-code');
+			
+			frappe.call({
+				method: "webshop.webshop.shopping_cart.product_info.get_product_info_for_website",
+				args: {
+					item_code: item_code
+				},
+				callback: function(r) {
+					if (r.message && r.message.product_info && r.message.product_info.qty > 0) {
+						console.log('Product is in cart, qty:', r.message.product_info.qty);
+						// Make sure the View in Quote button is visible and Add to Quote is hidden
+						$('.btn-add-to-cart').addClass('hidden');
+						$('.btn-view-in-cart').removeClass('hidden');
+					} else {
+						console.log('Product is not in cart');
+						// Make sure the Add to Quote button is visible and View in Quote is hidden
+						$('.btn-add-to-cart').removeClass('hidden');
+						$('.btn-view-in-cart').addClass('hidden');
+					}
+				}
+			});
+		};
+
+		// Run the check when the page loads
+		checkProductInCart();
+
 		$('.page_content').on('click', '.btn-add-to-cart', (e) => {
 			// Bind action on add to cart button
 			const $btn = $(e.currentTarget);
@@ -135,7 +163,9 @@
 				callback(r) {
 					$btn.prop('disabled', false);
 					if (r.message) {
-						$('.btn-add-to-cart, .btn-view-in-cart').toggleClass('hidden');
+						// Explicitly hide the Add to Quote button and show the View in Quote button
+						$('.btn-add-to-cart').addClass('hidden');
+						$('.btn-view-in-cart').removeClass('hidden');
 					}
 				}
 			});

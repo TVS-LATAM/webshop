@@ -141,15 +141,50 @@ def place_order():
 
 @frappe.whitelist()
 def request_for_quotation():
+	# First, get the cart quotation
 	quotation = _get_cart_quotation()
 	quotation.flags.ignore_permissions = True
-
-	if get_shopping_cart_settings().save_quotations_as_draft:
-		quotation.save()
-	else:
-		quotation.submit()
-
-	return quotation.name
+	
+	# Check if shipping address is set
+	if not quotation.shipping_address_name:
+		frappe.throw(_("Please set a shipping address before requesting a quotation."))
+	
+	# Check if the quotation is already linked to a project
+	if quotation.project_name:
+		existing_project = frappe.db.exists("Project", quotation.project_name)
+		if existing_project:
+			# Return the existing project name if it already exists
+			return quotation.project_name
+	
+	# Get customer details from quotation
+	customer_name = frappe.db.get_value("Customer", quotation.party_name, "customer_name")
+	
+	# Generate a project name based on the quotation
+	project_name = f"RFQ-{frappe.utils.now_datetime().strftime('%Y%m%d%H%M%S')}"
+	
+	# Create a new project with part_status "New request" using get_doc
+	project = frappe.get_doc({
+		"doctype": "Project",
+		"project_name": project_name,
+		"status": "",
+		"parts_status": "New request",
+		"expected_start_date": frappe.utils.today(),
+		"customer": quotation.party_name,
+		"customer_name": customer_name,
+		"priority": "Medium",
+		"is_active": "Yes",
+		"plate": project_name
+	})
+	
+	# Save the project
+	project.flags.ignore_permissions = True
+	project.insert()
+	
+	# Link the quotation to the project
+	quotation.project_name = project.name
+	quotation.save()
+	
+	return project.name
 
 
 @frappe.whitelist()
@@ -230,6 +265,25 @@ def add_new_address(doc):
 	doc.update({"doctype": "Address"})
 	address = frappe.get_doc(doc)
 	address.save(ignore_permissions=True)
+
+	# Update customer's phone_number and contact's phone if provided in the address
+	if address.phone:
+		party = get_party()
+		
+		if party and party.doctype == "Customer":
+			# Update customer's phone_number
+			party.phone_number = address.phone
+			party.flags.ignore_permissions = True
+			party.save()
+			
+			# Update contact's phone
+			contact_name = frappe.db.get_value("Contact", {"email_id": frappe.session.user})
+			
+			if contact_name:
+				contact = frappe.get_doc("Contact", contact_name)
+				contact.phone = address.phone
+				contact.flags.ignore_permissions = True
+				contact.save()
 
 	return address
 
@@ -331,6 +385,9 @@ def guess_territory():
 
 
 def decorate_quotation_doc(doc):
+	if not doc:
+		return doc
+		
 	for d in doc.get("items", []):
 		item_code = d.item_code
 		fields = ["web_item_name", "thumbnail", "website_image", "description", "route"]
@@ -342,7 +399,12 @@ def decorate_quotation_doc(doc):
 				filters={"item_code": item_code},
 				fieldname=["variant_of", "item_name", "image"],
 				as_dict=True,
-			)[0]
+			)
+			
+			if not variant_data:
+				continue
+				
+			variant_data = variant_data[0]
 			item_code = variant_data.variant_of
 			fields = fields[1:]
 			d.web_item_name = variant_data.item_name
@@ -351,11 +413,12 @@ def decorate_quotation_doc(doc):
 				d.thumbnail = variant_data.image
 				fields = fields[2:]
 
-		d.update(
-			frappe.db.get_value(
-				"Website Item", {"item_code": item_code}, fields, as_dict=True
-			)
+		website_item_data = frappe.db.get_value(
+			"Website Item", {"item_code": item_code}, fields, as_dict=True
 		)
+		
+		if website_item_data:
+			d.update(website_item_data)
 
 		website_warehouse = frappe.get_cached_value(
 			"Website Item", {"item_code": item_code}, "website_warehouse"
@@ -391,8 +454,6 @@ def _get_cart_quotation(party=None):
 		qdoc = frappe.get_doc(
 			{
 				"doctype": "Quotation",
-				"naming_series": get_shopping_cart_settings().quotation_series
-				or "QTN-CART-",
 				"quotation_to": party.doctype,
 				"company": company,
 				"order_type": "Shopping Cart",
@@ -594,13 +655,28 @@ def get_party(user=None):
 		customer.flags.ignore_mandatory = True
 		customer.insert(ignore_permissions=True)
 
-		contact = frappe.new_doc("Contact")
-		contact.update(
-			{"first_name": fullname, "email_ids": [{"email_id": user, "is_primary": 1}]}
+		# Check if a contact with this email already exists
+		existing_contact = frappe.db.get_value(
+			"Contact Email", {"email_id": user}, "parent"
 		)
-		contact.append("links", dict(link_doctype="Customer", link_name=customer.name))
-		contact.flags.ignore_mandatory = True
-		contact.insert(ignore_permissions=True)
+		
+		if existing_contact:
+			# If contact exists, just link it to the customer
+			contact = frappe.get_doc("Contact", existing_contact)
+			# Check if this contact is already linked to our customer
+			if not any(link.link_name == customer.name for link in contact.links):
+				contact.append("links", dict(link_doctype="Customer", link_name=customer.name))
+				contact.flags.ignore_mandatory = True
+				contact.save(ignore_permissions=True)
+		else:
+			# Create new contact only if one doesn't exist
+			contact = frappe.new_doc("Contact")
+			contact.update(
+				{"first_name": fullname, "email_ids": [{"email_id": user, "is_primary": 1}]}
+			)
+			contact.append("links", dict(link_doctype="Customer", link_name=customer.name))
+			contact.flags.ignore_mandatory = True
+			contact.insert(ignore_permissions=True)
 
 		return customer
 	else:

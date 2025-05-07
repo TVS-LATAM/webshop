@@ -5,9 +5,14 @@
 				{{ _("Place Order") }}
 			</button>
 		{% else %}
-			<button class="btn btn-primary btn-request-for-quotation font-md w-100" type="button">
+			<button class="btn btn-primary btn-request-for-quotation font-md w-100" type="button" {% if not doc.shipping_address_name %}disabled{% endif %}>
 				{{ _("Request for Quote") }}
 			</button>
+			{% if not doc.shipping_address_name %}
+			<div class="text-center mt-2 text-danger small">
+				{{ _("Please add a shipping address first") }}
+			</div>
+			{% endif %}
 		{% endif %}
 	</div>
 </div>
