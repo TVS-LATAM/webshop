@@ -190,7 +190,7 @@ $.extend(shopping_cart, {
 					
 					// Show success message
 					frappe.show_alert({
-						message: __("Your quotation request has been submitted successfully. You will receive the final quotation with prices soon. Thank you for your request!"),
+						message: __("Thank you! We've received your quotation request. Our team is reviewing the details and will send your quotation shortly. We appreciate your interest!"),
 						indicator: 'green'
 					}, 10);
 					
