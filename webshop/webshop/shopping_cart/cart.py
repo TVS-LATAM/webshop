@@ -263,6 +263,11 @@ def get_shopping_cart_menu(context=None):
 def add_new_address(doc):
 	doc = frappe.parse_json(doc)
 	doc.update({"doctype": "Address"})
+	
+	# Remove '+' prefix from phone number if present
+	if doc.get('phone') and doc['phone'].startswith('+'):
+		doc['phone'] = doc['phone'].lstrip('+')
+	
 	address = frappe.get_doc(doc)
 	address.save(ignore_permissions=True)
 
@@ -272,7 +277,12 @@ def add_new_address(doc):
 		
 		if party and party.doctype == "Customer":
 			# Update customer's phone_number
-			party.phone_number = address.phone
+			# Ensure phone number doesn't have '+' prefix
+			phone_number = address.phone
+			if phone_number.startswith('+'):
+				phone_number = phone_number.lstrip('+')
+			
+			party.phone_number = phone_number
 			party.flags.ignore_permissions = True
 			party.save()
 			
@@ -281,7 +291,7 @@ def add_new_address(doc):
 			
 			if contact_name:
 				contact = frappe.get_doc("Contact", contact_name)
-				contact.phone = address.phone
+				contact.phone = phone_number
 				contact.flags.ignore_permissions = True
 				contact.save()
 
