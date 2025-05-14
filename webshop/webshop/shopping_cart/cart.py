@@ -173,7 +173,8 @@ def request_for_quotation():
 		"customer_name": customer_name,
 		"priority": "Medium",
 		"is_active": "Yes",
-		"plate": project_name
+		"plate": project_name,
+		"queue_position": 1,
 	})
 	
 	# Save the project
