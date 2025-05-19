@@ -40,6 +40,8 @@ class ProductQuery:
 			"route",
 			"website_warehouse",
 			"ranking",
+			"oe_pn",
+			"oem_pn",
 			"on_backorder",
 		]
 
