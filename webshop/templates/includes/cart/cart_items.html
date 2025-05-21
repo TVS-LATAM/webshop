@@ -34,7 +34,7 @@
 
 				<div class="d-flex w-100" style="flex-direction: column;">
 					<div class="item-title mb-1 mr-3">
-						{{ d.get("web_item_name") or d.item_name }}
+						{{ d.get("description") or d.get("web_item_name") or d.item_name }}
 					</div>
 					<div class="item-subtitle mr-2">
 						{{ d.item_code }}

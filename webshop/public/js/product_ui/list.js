@@ -21,9 +21,8 @@ webshop.ProductList = class {
 		let html = `<br><br>`;
 
 		this.items.forEach(item => {
-			let title = item.web_item_name || item.item_name || item.item_code || "";
+			let title = item.description || item.web_item_name || item.item_name || item.item_code || "";
 			title =  title.length > 200 ? title.substr(0, 200) + "..." : title;
-
 			html += `<div class='row list-row w-100 mb-4'>`;
 			html += me.get_image_html(item, title, me.settings);
 			html += me.get_row_body_html(item, title, me.settings);
