@@ -278,9 +278,33 @@ def _add_subitems_to_quotation(quotation, item_code, qty, warehouse):
 			# Set the calculated total quantity
 			if total_qty > 0:
 				quotation_items[0].qty = total_qty
+				# If multiple parents reference this subitem, set parent_item to None
+				# Count how many parent items in the quotation have this subitem
+				parent_count = 0
+				for p in quotation.items:
+					if p.item_code == subitem.item_code:
+						continue
+					
+					try:
+						parent_doc = frappe.get_doc("Item", p.item_code)
+						if hasattr(parent_doc, 'subitems_list') and parent_doc.subitems_list:
+							for parent_subitem in parent_doc.subitems_list:
+								if parent_subitem.item_code == subitem.item_code:
+									parent_count += 1
+									break
+					except Exception:
+						pass
+				
+				if parent_count > 1:
+					quotation_items[0].parent_item = None
+				else:
+					# Single parent, set the parent_item reference
+					quotation_items[0].parent_item = item_code
 			else:
 				# If no parent items found, set the default quantity
 				quotation_items[0].qty = subitem.qty * qty
+				# Set the parent_item reference
+				quotation_items[0].parent_item = item_code
 
 @frappe.whitelist()
 def request_for_quotation():
@@ -338,14 +362,41 @@ def update_cart(item_code, qty, additional_notes=None, with_items=False):
 	empty_card = False
 	qty = flt(qty)
 	if qty == 0:
-		# First, remove any subitems that have this item as their parent_item
-		subitems_to_keep = []
-		for item in quotation.get("items", []):
-			if not hasattr(item, 'parent_item') or item.parent_item != item_code:
-				subitems_to_keep.append(item)
+		print(f"Removing item: {item_code}")
+		# Print all items in the quotation with their parent_item values
+		print("All items in quotation:")
+		for i in quotation.get("items", []):
+			print(f"Item: {i.item_code}, Parent: {i.get('parent_item')}")
 		
-		# Then remove the parent item
-		quotation_items = [item for item in subitems_to_keep if item.item_code != item_code]
+		# Get package items for the item being removed
+		package_item_codes = []
+		product_bundle_items = get_product_bundle_items(item_code)
+		if product_bundle_items:
+			package_item_codes = [pi.item_code for pi in product_bundle_items]
+			print(f"Package items for {item_code}: {package_item_codes}")
+		
+		# Create a new list of items, excluding the parent item, all its subitems, and all subitems of package items
+		quotation_items = []
+		for item in quotation.get("items", []):
+			print(f"Checking item: {item.item_code}, parent_item: {item.get('parent_item')}")
+			# Skip the item being removed
+			if item.item_code == item_code:
+				print(f"Skipping item being removed: {item.item_code}")
+				continue
+			
+			# Skip any subitems that have this item as their parent
+			if item.get('parent_item') == item_code:
+				print(f"Skipping subitem: {item.item_code} with parent: {item.get('parent_item')}")
+				continue
+			
+			# Skip any subitems that have a package item as their parent
+			if item.get('parent_item') in package_item_codes:
+				print(f"Skipping package subitem: {item.item_code} with parent: {item.get('parent_item')}")
+				continue
+			
+			# Keep all other items
+			print(f"Keeping item: {item.item_code}")
+			quotation_items.append(item)
 		
 		if quotation_items:
 			quotation.set("items", quotation_items)
