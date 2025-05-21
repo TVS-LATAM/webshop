@@ -301,7 +301,15 @@ def update_cart(item_code, qty, additional_notes=None, with_items=False):
 	empty_card = False
 	qty = flt(qty)
 	if qty == 0:
-		quotation_items = quotation.get("items", {"item_code": ["!=", item_code]})
+		# First, remove any subitems that have this item as their parent_item
+		subitems_to_keep = []
+		for item in quotation.get("items", []):
+			if not hasattr(item, 'parent_item') or item.parent_item != item_code:
+				subitems_to_keep.append(item)
+		
+		# Then remove the parent item
+		quotation_items = [item for item in subitems_to_keep if item.item_code != item_code]
+		
 		if quotation_items:
 			quotation.set("items", quotation_items)
 		else:
@@ -331,8 +339,10 @@ def update_cart(item_code, qty, additional_notes=None, with_items=False):
 	
 	apply_cart_settings(quotation=quotation)
 
-	# Add package items to the quotation and update the parent item's rate
-	_add_package_items_to_quotation(item_code, qty, quotation, warehouse)
+	# Only add package items when adding to cart (qty > 0), not when removing
+	if qty > 0:
+		# Add package items to the quotation and update the parent item's rate
+		_add_package_items_to_quotation(item_code, qty, quotation, warehouse)
 
 	quotation.flags.ignore_permissions = True
 	quotation.payment_schedule = []
