@@ -246,7 +246,8 @@ def _add_subitems_to_quotation(quotation, item_code, qty, warehouse):
 					"doctype": "Quotation Item",
 					"item_code": subitem.item_code,
 					"qty": subitem.qty,
-					"warehouse": warehouse
+					"warehouse": warehouse,
+					"parent_item": item_code
 				},
 			)
 		else:
