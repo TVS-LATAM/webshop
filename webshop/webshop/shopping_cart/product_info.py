@@ -2,6 +2,7 @@
 # License: GNU General Public License v3. See license.txt
 
 import frappe
+from frappe.utils import flt, fmt_money
 
 from webshop.webshop.doctype.webshop_settings.webshop_settings import (
     get_shopping_cart_settings,
@@ -11,6 +12,8 @@ from webshop.webshop.shopping_cart.cart import _get_cart_quotation, _set_price_l
 from erpnext.utilities.product import (get_price)
 from webshop.webshop.utils.product import (get_non_stock_item_status, get_web_item_qty_in_stock)
 from webshop.webshop.shopping_cart.cart import get_party
+from erpnext.stock.doctype.packed_item.packed_item import get_product_bundle_items
+
 
 
 @frappe.whitelist(allow_guest=True)
@@ -42,13 +45,65 @@ def get_product_info_for_website(item_code, skip_quotation_creation=False):
 		# Show Price if logged in.
 		# If not logged in, check if price is hidden for guest.
 		if not is_guest or not cart_settings.hide_price_for_guest:
-			price = get_price(
-				item_code,
-				selling_price_list,
-				cart_settings.default_customer_group,
-				cart_settings.company,
-				party=party,
-			)
+			# Check if item is a product bundle
+			product_bundle_items = get_product_bundle_items(item_code)
+			
+			if product_bundle_items:
+				# Calculate the sum of all bundle items' prices
+				total_bundle_price = 0
+				total_bundle_price_list_rate = 0
+				currency = None
+
+				
+				for bundle_item in product_bundle_items:
+					# Get price for each bundle item
+					bundle_item_price = get_price(
+						bundle_item.item_code,
+						selling_price_list,
+						cart_settings.default_customer_group,
+						cart_settings.company,
+						party=party,
+					)
+
+					if bundle_item_price:
+						# Sum up the prices
+						item_price = flt(bundle_item_price.get('price_list_rate')) * flt(bundle_item.qty)
+						total_bundle_price += item_price
+						total_bundle_price_list_rate += item_price
+						
+						# # Get currency from the first item (should be the same for all)
+						if not currency and bundle_item_price.get('currency'):
+							currency = bundle_item_price.get('currency')
+
+				if total_bundle_price > 0 and currency:
+					# Create a price object similar to what get_price returns
+					price = {
+						'price_list_rate': total_bundle_price_list_rate,
+						'currency': currency,
+						'formatted_price': fmt_money(total_bundle_price, currency=currency),
+						'formatted_price_sales_uom': fmt_money(total_bundle_price, currency=currency),
+						'price': total_bundle_price
+					}
+				else:
+					# Fallback to regular pricing if bundle pricing failed
+					price = get_price(
+						item_code,
+						selling_price_list,
+						cart_settings.default_customer_group,
+						cart_settings.company,
+						party=party,
+					)
+			else:
+				# Regular item pricing
+				price = get_price(
+					item_code,
+					selling_price_list,
+					cart_settings.default_customer_group,
+					cart_settings.company,
+					party=party,
+				)
+
+	print("price=>", price)
 
 	stock_status = None
 

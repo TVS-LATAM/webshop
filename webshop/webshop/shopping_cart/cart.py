@@ -282,6 +282,7 @@ def _add_subitems_to_quotation(quotation, item_code, qty, warehouse):
 				# If no parent items found, set the default quantity
 				quotation_items[0].qty = subitem.qty * qty
 
+@frappe.whitelist()
 def request_for_quotation():
 	# First, get the cart quotation
 	quotation = _get_cart_quotation()
