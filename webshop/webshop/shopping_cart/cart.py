@@ -212,6 +212,9 @@ def _add_package_items_to_quotation(item_code, qty, quotation, warehouse=None):
 			
 			# Add to the total price
 			total_package_price += package_item_price * flt(package_item.qty)
+			
+			# Check if the package item has subitems and add them to the quotation
+			_add_subitems_to_quotation(quotation, package_item_code, package_item_qty, package_item_warehouse)
 				
 		# Set the parent item's rate to the sum of its package items' rates
 		parent_item.rate = total_package_price
