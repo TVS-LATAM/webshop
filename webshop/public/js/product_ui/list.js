@@ -101,7 +101,7 @@ webshop.ProductList = class {
 				${ item.item_group } | ${ __('Item Code') } : ${ item.item_code }
 			</p>
 			<p>
-				${ item.oe_pn ? __('OE PN') + ': ' + item.oe_pn : '' } | 
+				${ item.oe_pn ? __('OE PN') + ': ' + item.oe_pn : '' } ${item.oem_pn ? ' | ' : ''}
 				${ item.oem_pn ? __('OEM PN') + ': ' + item.oem_pn : '' }
 			</p>
 			<div class="mt-2" style="color: var(--gray-600) !important; font-size: 13px;">
