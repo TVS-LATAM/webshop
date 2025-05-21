@@ -220,22 +220,38 @@ def _add_package_items_to_quotation(item_code, qty, quotation, warehouse=None):
 		if not hasattr(item_doc, 'subitems_list') or not item_doc.subitems_list:
 			return
 			
-		subitems = item_doc.subitems_list		
+		subitems = item_doc.subitems_list	
+
 
 		for subitem in subitems:
-			print("subitem===>", subitem)
-			# Add the subitem to the quotation
-			quotation.append(
-				"items",
-				{
-					"doctype": "Quotation Item",
-					"item_code": subitem.item_code,
-					"qty": subitem.qty,
-					# "warehouse": subitem.warehouse,
-					"parent_item": item_code,  # Reference to the parent item
-				},
-			)
-		
+			quotation_items = quotation.get("items", {"item_code": subitem.item_code})
+			if not quotation_items:	
+				print("subitem===>", subitem.as_dict())
+				# Add the subitem to the quotation
+				quotation.append(
+					"items",
+					{
+						"doctype": "Quotation Item",
+						"item_code": subitem.item_code,
+						"qty": subitem.qty,
+						# "warehouse": subitem.warehouse,
+						"parent_item": item_code,  # Reference to the parent item
+					},
+				)
+			else:
+				# Make sure to convert all values to float before arithmetic operations
+				quotation_items[0].qty = qty
+				
+				# Check if subitem has a rate attribute and it's not None or empty string
+				subitem_rate = 0
+				if hasattr(subitem, 'rate') and subitem.rate:
+					subitem_rate = flt(subitem.rate)
+				
+				quotation_items[0].amount = flt(quotation_items[0].amount) + (flt(qty) * subitem_rate)
+				quotation_items[0].price_list_rate = flt(quotation_items[0].price_list_rate) + (flt(qty) * subitem_rate)
+				quotation_items[0].rate = flt(quotation_items[0].rate) + (flt(qty) * subitem_rate)
+				quotation_items[0].parent_item = item_code
+				
 		# Set the parent item's rate to the sum of its package items' rates
 		parent_item.rate = total_package_price
 		parent_item.price_list_rate = total_package_price
