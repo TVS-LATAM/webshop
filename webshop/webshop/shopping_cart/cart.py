@@ -212,45 +212,6 @@ def _add_package_items_to_quotation(item_code, qty, quotation, warehouse=None):
 			
 			# Add to the total price
 			total_package_price += package_item_price * flt(package_item.qty)
-
-		# Get the item document to access its subitems_list
-		item_doc = frappe.get_doc("Item", item_code)
-		
-		# Check if the item has subitems_list
-		if not hasattr(item_doc, 'subitems_list') or not item_doc.subitems_list:
-			return
-			
-		subitems = item_doc.subitems_list	
-
-
-		for subitem in subitems:
-			quotation_items = quotation.get("items", {"item_code": subitem.item_code})
-			if not quotation_items:	
-				print("subitem===>", subitem.as_dict())
-				# Add the subitem to the quotation
-				quotation.append(
-					"items",
-					{
-						"doctype": "Quotation Item",
-						"item_code": subitem.item_code,
-						"qty": subitem.qty,
-						# "warehouse": subitem.warehouse,
-						"parent_item": item_code,  # Reference to the parent item
-					},
-				)
-			else:
-				# Make sure to convert all values to float before arithmetic operations
-				quotation_items[0].qty = qty
-				
-				# Check if subitem has a rate attribute and it's not None or empty string
-				subitem_rate = 0
-				if hasattr(subitem, 'rate') and subitem.rate:
-					subitem_rate = flt(subitem.rate)
-				
-				quotation_items[0].amount = flt(quotation_items[0].amount) + (flt(qty) * subitem_rate)
-				quotation_items[0].price_list_rate = flt(quotation_items[0].price_list_rate) + (flt(qty) * subitem_rate)
-				quotation_items[0].rate = flt(quotation_items[0].rate) + (flt(qty) * subitem_rate)
-				quotation_items[0].parent_item = item_code
 				
 		# Set the parent item's rate to the sum of its package items' rates
 		parent_item.rate = total_package_price
@@ -261,6 +222,61 @@ def _add_package_items_to_quotation(item_code, qty, quotation, warehouse=None):
 		frappe.log_error(f"Error adding package items to quotation: {str(e)}")
 		print(f"Error adding subitems to quotation: {str(e)}")
 
+def _add_subitems_to_quotation(quotation, item_code, qty, warehouse):
+	# Get the item document to access its subitems_list
+	item_doc = frappe.get_doc("Item", item_code)
+	
+	# Check if the item has subitems_list
+	if not hasattr(item_doc, 'subitems_list') or not item_doc.subitems_list:
+		return
+			
+	subitems = item_doc.subitems_list
+
+	for subitem in subitems:
+		quotation_items = quotation.get("items", {"item_code": subitem.item_code})
+		if not quotation_items:	
+			print("subitem===>", subitem.as_dict())
+			# Add the subitem to the quotation
+			quotation.append(
+				"items",
+				{
+					"doctype": "Quotation Item",
+					"item_code": subitem.item_code,
+					"qty": subitem.qty,
+					"warehouse": warehouse
+				},
+			)
+		else:
+			# Update the quantity of the existing subitem
+			total_qty = 0
+			
+			# Search for all parent items in the quotation that have this subitem in their subitems_list
+			for parent_item in quotation.items:
+				# Skip the subitem itself
+				if parent_item.item_code == subitem.item_code:
+					continue
+					
+				# Get the parent item document
+				try:
+					parent_doc = frappe.get_doc("Item", parent_item.item_code)
+					
+					# Check if the parent item has subitems_list
+					if hasattr(parent_doc, 'subitems_list') and parent_doc.subitems_list:
+						# Check if the current subitem is in the parent's subitems_list
+						for parent_subitem in parent_doc.subitems_list:
+							if parent_subitem.item_code == subitem.item_code:
+								# Add the quantity based on the parent item's quantity and subitem's quantity
+								total_qty += flt(parent_item.qty) * flt(parent_subitem.qty)
+								break
+				except Exception as e:
+					frappe.log_error(f"Error calculating subitem quantity: {str(e)}")
+			
+			# Set the calculated total quantity
+			if total_qty > 0:
+				quotation_items[0].qty = total_qty
+			else:
+				# If no parent items found, set the default quantity
+				quotation_items[0].qty = subitem.qty * qty
 
 def request_for_quotation():
 	# First, get the cart quotation
@@ -359,6 +375,8 @@ def update_cart(item_code, qty, additional_notes=None, with_items=False):
 	if qty > 0:
 		# Add package items to the quotation and update the parent item's rate
 		_add_package_items_to_quotation(item_code, qty, quotation, warehouse)
+		# Add subitems to the quotation and update the parent item's rate
+		_add_subitems_to_quotation(quotation, item_code, qty, warehouse)
 
 	quotation.flags.ignore_permissions = True
 	quotation.payment_schedule = []
