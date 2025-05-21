@@ -15,6 +15,7 @@ from webshop.webshop.doctype.webshop_settings.webshop_settings import (
 )
 from webshop.webshop.utils.product import get_web_item_qty_in_stock
 from erpnext.selling.doctype.quotation.quotation import _make_sales_order
+from erpnext.stock.doctype.packed_item.packed_item import get_product_bundle_items
 
 
 class WebsitePriceListMissingError(frappe.ValidationError):
@@ -140,6 +141,111 @@ def place_order():
 
 
 @frappe.whitelist()
+def _add_package_items_to_quotation(item_code, qty, quotation, warehouse=None):
+	"""Add package items from the subitems_list attribute of an item to the quotation
+	and set the parent item's rate as the sum of its package items' rates"""
+	try:
+		# First check if this is a product bundle
+		product_bundle_items = get_product_bundle_items(item_code)
+		
+		# If it's not a product bundle, check if it has subitems_list
+		if not product_bundle_items:
+			return
+		
+		package_items = product_bundle_items
+
+		print("package_items=>", package_items)
+		
+		# Find the parent item in the quotation
+		parent_item = None
+		for item in quotation.get("items", []):
+			if item.item_code == item_code:
+				parent_item = item
+				break
+		
+		if not parent_item:
+			return
+		
+		# Track the total price of all package items
+		total_package_price = 0
+		
+		# Add each package item to the quotation
+		for package_item in package_items:
+			# Get the package item code
+			package_item_code = package_item.item_code
+			if not package_item_code:
+				continue
+			
+			# Calculate the quantity of the package item based on the quantity of the parent item
+			package_item_qty = flt(package_item.qty) * flt(qty)
+			
+			# Get the warehouse for the package item
+			package_item_warehouse = frappe.get_cached_value(
+				"Website Item", {"item_code": package_item_code}, "website_warehouse"
+			) or warehouse
+			
+			# Get the price of the package item
+			package_item_price = 0
+			if hasattr(package_item, 'rate') and package_item.rate:
+				package_item_price = flt(package_item.rate)
+			else:
+				# Try to get the price from Item Price
+				item_price = frappe.get_all(
+					"Item Price",
+					fields=["price_list_rate"],
+					filters={
+						"item_code": package_item_code,
+						"price_list": quotation.selling_price_list,
+						"selling": 1
+					},
+					order_by="valid_from desc",
+					limit=1
+				)
+				
+				if item_price:
+					package_item_price = flt(item_price[0].price_list_rate)
+				else:
+					# If no price found in the price list, try to get the standard rate from Item
+					standard_rate = frappe.db.get_value("Item", package_item_code, "standard_rate")
+					if standard_rate:
+						package_item_price = flt(standard_rate)
+			
+			# Add to the total price
+			total_package_price += package_item_price * flt(package_item.qty)
+
+		# Get the item document to access its subitems_list
+		item_doc = frappe.get_doc("Item", item_code)
+		
+		# Check if the item has subitems_list
+		if not hasattr(item_doc, 'subitems_list') or not item_doc.subitems_list:
+			return
+			
+		subitems = item_doc.subitems_list		
+
+		for subitem in subitems:
+			print("subitem===>", subitem)
+			# Add the subitem to the quotation
+			quotation.append(
+				"items",
+				{
+					"doctype": "Quotation Item",
+					"item_code": subitem.item_code,
+					"qty": subitem.qty,
+					# "warehouse": subitem.warehouse,
+					"parent_item": item_code,  # Reference to the parent item
+				},
+			)
+		
+		# Set the parent item's rate to the sum of its package items' rates
+		parent_item.rate = total_package_price
+		parent_item.price_list_rate = total_package_price
+		parent_item.amount = total_package_price * flt(qty)
+		
+	except Exception as e:
+		frappe.log_error(f"Error adding package items to quotation: {str(e)}")
+		print(f"Error adding subitems to quotation: {str(e)}")
+
+
 def request_for_quotation():
 	# First, get the cart quotation
 	quotation = _get_cart_quotation()
@@ -222,8 +328,11 @@ def update_cart(item_code, qty, additional_notes=None, with_items=False):
 			quotation_items[0].qty = qty
 			quotation_items[0].warehouse = warehouse
 			quotation_items[0].additional_notes = additional_notes
-
+	
 	apply_cart_settings(quotation=quotation)
+
+	# Add package items to the quotation and update the parent item's rate
+	_add_package_items_to_quotation(item_code, qty, quotation, warehouse)
 
 	quotation.flags.ignore_permissions = True
 	quotation.payment_schedule = []
