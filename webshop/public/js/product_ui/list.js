@@ -21,9 +21,8 @@ webshop.ProductList = class {
 		let html = `<br><br>`;
 
 		this.items.forEach(item => {
-			let title = item.web_item_name || item.item_name || item.item_code || "";
+			let title = item.description || item.web_item_name || item.item_name || item.item_code || "";
 			title =  title.length > 200 ? title.substr(0, 200) + "..." : title;
-
 			html += `<div class='row list-row w-100 mb-4'>`;
 			html += me.get_image_html(item, title, me.settings);
 			html += me.get_row_body_html(item, title, me.settings);
@@ -99,6 +98,10 @@ webshop.ProductList = class {
 		let details = `
 			<p class="product-code">
 				${ item.item_group } | ${ __('Item Code') } : ${ item.item_code }
+			</p>
+			<p>
+				${ item.oe_pn ? __('OE PN') + ': ' + item.oe_pn : '' } ${item.oem_pn ? ' | ' : ''}
+				${ item.oem_pn ? __('OEM PN') + ': ' + item.oem_pn : '' }
 			</p>
 			<div class="mt-2" style="color: var(--gray-600) !important; font-size: 13px;">
 				${ item.short_description || '' }

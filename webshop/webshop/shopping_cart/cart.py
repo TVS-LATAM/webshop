@@ -15,6 +15,7 @@ from webshop.webshop.doctype.webshop_settings.webshop_settings import (
 )
 from webshop.webshop.utils.product import get_web_item_qty_in_stock
 from erpnext.selling.doctype.quotation.quotation import _make_sales_order
+from erpnext.stock.doctype.packed_item.packed_item import get_product_bundle_items
 
 
 class WebsitePriceListMissingError(frappe.ValidationError):
@@ -139,6 +140,253 @@ def place_order():
 	return sales_order.name
 
 
+def _remove_item_and_subitems(quotation, item_code):
+	"""Remove an item and all its subitems from the quotation
+	
+	Args:
+		quotation: The quotation document
+		item_code: The item code of the item to remove
+	
+	Returns:
+		list: A list of items to keep in the quotation
+	"""
+	print(f"Removing item: {item_code}")
+	# Print all items in the quotation with their parent_item values
+	print("All items in quotation:")
+	for i in quotation.get("items", []):
+		print(f"Item: {i.item_code}, Parent: {i.get('parent_item')}")
+	
+	# Get package items for the item being removed
+	package_item_codes = []
+	product_bundle_items = get_product_bundle_items(item_code)
+	if product_bundle_items:
+		package_item_codes = [pi.item_code for pi in product_bundle_items]
+		print(f"Package items for {item_code}: {package_item_codes}")
+	
+	# Create a new list of items, excluding the parent item, all its subitems, and all subitems of package items
+	quotation_items = []
+	for item in quotation.get("items", []):
+		print(f"Checking item: {item.item_code}, parent_item: {item.get('parent_item')}")
+		# Skip the item being removed
+		if item.item_code == item_code:
+			print(f"Skipping item being removed: {item.item_code}")
+			continue
+		
+		# Skip any subitems that have this item as their parent
+		if item.get('parent_item') == item_code:
+			print(f"Skipping subitem: {item.item_code} with parent: {item.get('parent_item')}")
+			continue
+		
+		# Skip any subitems that have a package item as their parent
+		if item.get('parent_item') in package_item_codes:
+			print(f"Skipping package subitem: {item.item_code} with parent: {item.get('parent_item')}")
+			continue
+		
+		# Keep all other items
+		print(f"Keeping item: {item.item_code}")
+		quotation_items.append(item)
+	
+	return quotation_items
+
+def _get_package_item_price(package_item, price_list):
+	"""Get the price of a package item
+	
+	Args:
+		package_item: The package item document
+		price_list: The price list to use
+	
+	Returns:
+		float: The price of the package item
+	"""
+	package_item_code = package_item.item_code
+	package_item_price = 0
+	
+	# First check if the package item has a rate
+	if hasattr(package_item, 'rate') and package_item.rate:
+		package_item_price = flt(package_item.rate)
+	else:
+		# Try to get the price from Item Price
+		item_price = frappe.get_all(
+			"Item Price",
+			fields=["price_list_rate"],
+			filters={
+				"item_code": package_item_code,
+				"price_list": price_list,
+				"selling": 1
+			},
+			order_by="valid_from desc",
+			limit=1
+		)
+		
+		if item_price:
+			package_item_price = flt(item_price[0].price_list_rate)
+		else:
+			# If no price found in the price list, try to get the standard rate from Item
+			standard_rate = frappe.db.get_value("Item", package_item_code, "standard_rate")
+			if standard_rate:
+				package_item_price = flt(standard_rate)
+	
+	return package_item_price
+
+@frappe.whitelist()
+def _add_package_items_to_quotation(item_code, qty, quotation, warehouse=None):
+	"""Add package items from the subitems_list attribute of an item to the quotation
+	and set the parent item's rate as the sum of its package items' rates
+	
+	Args:
+		item_code: The item code of the parent item
+		qty: The quantity of the parent item
+		quotation: The quotation document
+		warehouse: The warehouse for the package items
+	"""
+	try:
+		# First check if this is a product bundle
+		product_bundle_items = get_product_bundle_items(item_code)
+		
+		# If it's not a product bundle, check if it has subitems_list
+		if not product_bundle_items:
+			return
+		
+		package_items = product_bundle_items
+
+		print("package_items=>", package_items)
+		
+		# Find the parent item in the quotation
+		parent_item = None
+		for item in quotation.get("items", []):
+			if item.item_code == item_code:
+				parent_item = item
+				break
+		
+		if not parent_item:
+			return
+		
+		# Track the total price of all package items
+		total_package_price = 0
+		
+		# Add each package item to the quotation
+		for package_item in package_items:
+			# Get the package item code
+			package_item_code = package_item.item_code
+			if not package_item_code:
+				continue
+			
+			# Calculate the quantity of the package item based on the quantity of the parent item
+			package_item_qty = flt(package_item.qty) * flt(qty)
+			
+			# Get the warehouse for the package item
+			package_item_warehouse = frappe.get_cached_value(
+				"Website Item", {"item_code": package_item_code}, "website_warehouse"
+			) or warehouse
+			
+			# Get the price of the package item
+			package_item_price = _get_package_item_price(package_item, quotation.selling_price_list)
+			
+			# Add to the total price
+			total_package_price += package_item_price * flt(package_item.qty)
+			
+			# Check if the package item has subitems and add them to the quotation
+			_add_subitems_to_quotation(quotation, package_item_code, package_item_qty, package_item_warehouse)
+				
+		# Set the parent item's rate to the sum of its package items' rates
+		parent_item.rate = total_package_price
+		parent_item.price_list_rate = total_package_price
+		parent_item.amount = total_package_price * flt(qty)
+		
+	except Exception as e:
+		frappe.log_error(f"Error adding package items to quotation: {str(e)}")
+		print(f"Error adding subitems to quotation: {str(e)}")
+
+def _calculate_subitem_quantity(quotation, subitem_code):
+	"""Calculate the total quantity of a subitem based on all parent items in the quotation
+	
+	Args:
+		quotation: The quotation document
+		subitem_code: The item code of the subitem
+	
+	Returns:
+		float: The calculated total quantity
+		list: List of parent item codes that reference this subitem
+	"""
+	total_qty = 0
+	parent_items = []
+	
+	# Search for all parent items in the quotation that have this subitem in their subitems_list
+	for parent_item in quotation.items:
+		# Skip the subitem itself
+		if parent_item.item_code == subitem_code:
+			continue
+			
+		# Get the parent item document
+		try:
+			parent_doc = frappe.get_doc("Item", parent_item.item_code)
+			
+			# Check if the parent item has subitems_list
+			if hasattr(parent_doc, 'subitems_list') and parent_doc.subitems_list:
+				# Check if the current subitem is in the parent's subitems_list
+				for parent_subitem in parent_doc.subitems_list:
+					if parent_subitem.item_code == subitem_code:
+						# Add the quantity based on the parent item's quantity and subitem's quantity
+						total_qty += flt(parent_item.qty) * flt(parent_subitem.qty)
+						parent_items.append(parent_item.item_code)
+						break
+		except Exception as e:
+			frappe.log_error(f"Error calculating subitem quantity: {str(e)}")
+	
+	return total_qty, parent_items
+
+def _add_subitems_to_quotation(quotation, item_code, qty, warehouse):
+	"""Add subitems to the quotation based on the subitems_list of an item
+	
+	Args:
+		quotation: The quotation document
+		item_code: The item code of the parent item
+		qty: The quantity of the parent item
+		warehouse: The warehouse for the subitems
+	"""
+	# Get the item document to access its subitems_list
+	item_doc = frappe.get_doc("Item", item_code)
+	
+	# Check if the item has subitems_list
+	if not hasattr(item_doc, 'subitems_list') or not item_doc.subitems_list:
+		return
+		
+	subitems = item_doc.subitems_list
+
+	for subitem in subitems:
+		quotation_items = quotation.get("items", {"item_code": subitem.item_code})
+		if not quotation_items:	
+			print("subitem==>", subitem.as_dict())
+			# Add the subitem to the quotation
+			quotation.append(
+				"items",
+				{
+					"doctype": "Quotation Item",
+					"item_code": subitem.item_code,
+					"qty": subitem.qty,
+					"warehouse": warehouse,
+					"parent_item": item_code
+				},
+			)
+		else:
+			# Update the quantity of the existing subitem
+			total_qty, parent_items = _calculate_subitem_quantity(quotation, subitem.item_code)
+			
+			# Set the calculated total quantity
+			if total_qty > 0:
+				quotation_items[0].qty = total_qty
+				# If multiple parents reference this subitem, set parent_item to None
+				if len(parent_items) > 1:
+					quotation_items[0].parent_item = None
+				else:
+					# Single parent, set the parent_item reference
+					quotation_items[0].parent_item = item_code
+			else:
+				# If no parent items found, set the default quantity
+				quotation_items[0].qty = subitem.qty * qty
+				# Set the parent_item reference
+				quotation_items[0].parent_item = item_code
+
 @frappe.whitelist()
 def request_for_quotation():
 	# First, get the cart quotation
@@ -195,7 +443,9 @@ def update_cart(item_code, qty, additional_notes=None, with_items=False):
 	empty_card = False
 	qty = flt(qty)
 	if qty == 0:
-		quotation_items = quotation.get("items", {"item_code": ["!=", item_code]})
+		# Remove the item and its subitems from the quotation
+		quotation_items = _remove_item_and_subitems(quotation, item_code)
+		
 		if quotation_items:
 			quotation.set("items", quotation_items)
 		else:
@@ -222,8 +472,15 @@ def update_cart(item_code, qty, additional_notes=None, with_items=False):
 			quotation_items[0].qty = qty
 			quotation_items[0].warehouse = warehouse
 			quotation_items[0].additional_notes = additional_notes
-
+	
 	apply_cart_settings(quotation=quotation)
+
+	# Only add package items when adding to cart (qty > 0), not when removing
+	if qty > 0:
+		# Add package items to the quotation and update the parent item's rate
+		_add_package_items_to_quotation(item_code, qty, quotation, warehouse)
+		# Add subitems to the quotation and update the parent item's rate
+		_add_subitems_to_quotation(quotation, item_code, qty, warehouse)
 
 	quotation.flags.ignore_permissions = True
 	quotation.payment_schedule = []

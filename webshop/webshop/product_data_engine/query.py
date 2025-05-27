@@ -40,7 +40,10 @@ class ProductQuery:
 			"route",
 			"website_warehouse",
 			"ranking",
+			"oe_pn",
+			"oem_pn",
 			"on_backorder",
+			"description"
 		]
 
 	def query(self, attributes=None, fields=None, search_term=None, start=0, item_group=None):

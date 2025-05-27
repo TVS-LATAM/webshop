@@ -34,7 +34,7 @@
 
 				<div class="d-flex w-100" style="flex-direction: column;">
 					<div class="item-title mb-1 mr-3">
-						{{ d.get("web_item_name") or d.item_name }}
+						{{ d.get("description") or d.get("web_item_name") or d.item_name }}
 					</div>
 					<div class="item-subtitle mr-2">
 						{{ d.item_code }}
@@ -59,7 +59,8 @@
 		<!-- Qty column -->
 		<td class="text-right" style="width: 25%;">
 			<div class="d-flex">
-				{% set disabled = 'disabled' if d.is_free_item else '' %}
+				{% set is_subitem = d.get('parent_item') and d.parent_item %}
+				{% set disabled = 'disabled' if d.is_free_item or is_subitem else '' %}
 				<div class="input-group number-spinner mt-1 mb-4">
 					<span class="input-group-prepend d-sm-inline-block">
 						<button class="btn cart-btn" data-dir="dwn" {{ disabled }}>
@@ -78,7 +79,7 @@
 					</div>
 
 				<div>
-					{% if not d.is_free_item %}
+					{% if not d.is_free_item and not (d.get('parent_item') and d.parent_item) %}
 						<div class="remove-cart-item column-sm-view d-flex" data-item-code="{{ d.item_code }}">
 							<span>
 								<svg class="icon sm remove-cart-item-logo"

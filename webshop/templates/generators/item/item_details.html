@@ -7,7 +7,7 @@
 	<div class="d-flex">
 		<!-- title -->
 		<div class="product-title col-11" itemprop="name">
-			{{ _(doc.web_item_name) }}
+			{{ doc.description or doc.web_item_name }}
 		</div>
 
 		<!-- Wishlist -->
@@ -35,6 +35,20 @@
 			{{ _("Item Code") }}:
 		</span>
 		<span itemprop="name">{{ _(doc.item_code) }}</span>
+		{% if doc.oe_pn %}
+		<br>
+		<span class="product-oe-pn">
+			{{ _("OE PN") }}:
+		</span>
+		<span>{{ _(doc.oe_pn) }}</span>
+		{% endif %}
+		{% if doc.oem_pn %}
+		<br>
+		<span class="product-oem-pn">
+			{{ _("OEM PN") }}:
+		</span>
+		<span>{{ _(doc.oem_pn) }}</span>
+		{% endif %}
 	</p>
 	{% if has_variants %}
 		<!-- configure template -->

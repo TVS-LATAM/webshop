@@ -41,7 +41,7 @@ def get_product_data(search=None, start=0, limit=12):
 			web_item_name, item_name, item_code, brand, route,
 			website_image, thumbnail, item_group,
 			description, web_long_description as website_description,
-			website_warehouse, ranking
+			website_warehouse, ranking, oe_pn, oem_pn
 		FROM `tabWebsite Item`
 		WHERE published = 1
 		"""
@@ -51,7 +51,9 @@ def get_product_data(search=None, start=0, limit=12):
 		query += """ and (item_name like %(search)s
 				or web_item_name like %(search)s
 				or brand like %(search)s
-				or web_long_description like %(search)s)"""
+				or web_long_description like %(search)s
+				or oe_pn like %(search)s
+				or oem_pn like %(search)s)"""
 		search = "%" + cstr(search) + "%"
 
 	# order by
