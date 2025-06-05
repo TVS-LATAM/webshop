@@ -36,9 +36,6 @@
 					<div class="item-title mb-1 mr-3">
 						{{ d.get("description") or d.get("web_item_name") or d.item_name }}
 					</div>
-					<div class="item-subtitle mr-2">
-						{{ d.item_code }}
-					</div>
 					{%- set variant_of = frappe.db.get_value('Item', d.item_code, 'variant_of') %}
 					{% if variant_of %}
 					<span class="item-subtitle mr-2">
