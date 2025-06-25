@@ -431,7 +431,11 @@ def request_for_quotation():
 	
 	# Link the quotation to the project
 	quotation.project_name = project.name
+	quotation.order_type = "Sales"
 	quotation.save()
+	
+	# Clear the cart count when creating a quotation request
+	set_cart_count(None)
 	
 	return project.name
 
